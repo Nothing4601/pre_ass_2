@@ -20,9 +20,10 @@ class shape_t {
 public:
     std::vector<glm::vec4> vertices;
     std::vector<glm::vec4> colors;
+    std::vector<glm::vec4> normals;
     std::vector<unsigned int> indices;
 
-    GLuint VAO = 0, VBO = 0, CBO = 0, EBO = 0;
+    GLuint VAO = 0, VBO = 0, CBO = 0, EBO = 0,NBO=0;
     ShapeType shapetype;
     unsigned int level;
     shape_t() : level(1) {}
@@ -35,7 +36,8 @@ public:
         if (VAO) glDeleteVertexArrays(1, &VAO);
         if (VBO) glDeleteBuffers(1, &VBO);
         if (CBO) glDeleteBuffers(1, &CBO);
-        if (EBO) glDeleteBuffers(1, &EBO);
+       if (CBO) glDeleteBuffers(1, &NBO);
+      if (EBO) glDeleteBuffers(1, &EBO);
     }
 
     ShapeType getType() const { return shapetype; }
@@ -48,7 +50,7 @@ public:
         if (level != l) {
             level = l;
             generateGeometry();
-            VAO = VBO = CBO = EBO = 0; // force GPU buffer update
+            VAO = VBO = CBO = NBO=EBO = 0; // force GPU buffer update
         }
     }
     virtual void setColor(const glm::vec4& c) {
@@ -97,7 +99,20 @@ public:
             GL_STATIC_DRAW);
         glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
         glEnableVertexAttribArray(1);
+//Normals
+        if(normals.empty()){
+            normals.assign(vertices.size(),glm::vec3 (0.0f,1.0f,0.0f));
+        }
+         glGenBuffers(1, &NBO);
+        glBindBuffer(GL_ARRAY_BUFFER, NBO);
+        glBufferData(GL_ARRAY_BUFFER,
+            normals.size() * sizeof(glm::vec4),
+            normals.data(),
+            GL_STATIC_DRAW);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glEnableVertexAttribArray(2);
 
+        
         // Indices
         glGenBuffers(1, &EBO);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
@@ -144,7 +159,7 @@ public:
         vertices.clear();
         colors.clear();
         indices.clear();
-
+        normals.clear();
         unsigned int stacks = 10 * level;
         unsigned int slices = 10 * level;
 
@@ -382,4 +397,5 @@ public:
         std::cout << " End generateGeometry() " << std::endl;
     }
 };
+
 #endif // SHAPE_H
