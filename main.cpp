@@ -32,6 +32,13 @@ float cameraAngleX = 0.0f;
 float cameraAngleY = 0.0f;
 glm::mat4 modelRotation = glm::mat4(1.0f);
 
+bool lightingEnabled = true;
+glm::vec3 lightPosition= glm::vec3(5.0f,5.0f,5.0f);
+glm::vec3 lightColor=glm::vec3(1.0f,1.0f,1.0f);
+float ambientStrength =0.3f;
+float diffuseStrength =0.7f;
+float specularStrength =0.5f;
+float shininess= 32.0f;
 
 // shaders
 GLuint createShaderProgram() {
@@ -40,10 +47,45 @@ GLuint createShaderProgram() {
     #version 330 core
     layout(location = 0) in vec4 aPos;
     layout(location = 1) in vec4 aColor;
+     layout(location = 1) in vec4 aNormal;
     uniform mat4 MVP;
+    uniform mat4 model;
+    unifrm mat4 view;
+    uniform mat4 projection;
+
+    uniform bool enableLighting;
+    uniform vec3 lightPos;
+    uniform vec3 lightColor;
+    uniform vec3 viewPos;
+    uniform float ambientStrength;
+    uniform float diffuseStrength;
+    uniform float specularStrength;
+    uniform float shininess;
+    
+    
+
+    
     out vec4 fragColor;
+    if(enableLighting){
+        vec3 fragPos=vec3(model*aPos);
+        vec2 normal=normalise(mat3(transpose(inverse(model)))*aNormal;
+    vec3 ambient=ambientStrenght*lightColor;
+    vec3 lightDir=normalize(lightPos-fragPos);
+    float diff =max(dot(normal,lightDir),0.0);
+    vec3 diffuse=diffuseStrength*diff*lightColor;
+    vec3 viewDir=normalize(viewPos-fragPos);
+    view reflectDir=reflect(-lightDir,normal);
+    float spec=pow(max(dot(viewDir,reflectDir),0.0),shininess);
+    vec3 specular= specularStrength*spec*lightColor;
+
+    vec3 result=(ambient+diffuse+specualr)*vec3(aColor);
+    fragColor=vec4(result,aColor.a);
+}
+    else{fragColor=aColor;})";
+    
     void main() {
         gl_Position = MVP * aPos;
+    
         fragColor = aColor;
     })";
 
@@ -61,14 +103,29 @@ GLuint createShaderProgram() {
     glShaderSource(vertexShader, 1, &vertexShaderSrc, nullptr);
     glCompileShader(vertexShader);
 
+    Gluint success;
+    glGetShaderiv(vertexShader,GL_COMPILE_STATUS,&success);
+    if(!success){char infoLog[512];
+                 glGetShaderInfoLog(vertexShader,512,nullptr,infolog);
+                 std::cerr<<"vshader not compiled"<<infolog<<std::endl;}
+
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &fragmentShaderSrc, nullptr);
     glCompileShader(fragmentShader);
-
+    
+   glGetShaderiv(fragmentShader,GL_COMPILE_STATUS,&success);
+    if(!success){char infoLog[512];
+                 glGetShaderInfoLog(fragmentShader,512,nullptr,infolog);
+                 std::cerr<<"fshader not compiled"<<infolog<<std::endl;}
     GLuint program = glCreateProgram();
     glAttachShader(program, vertexShader);
     glAttachShader(program, fragmentShader);
     glLinkProgram(program);
+
+    glGetShaderiv(program,GL_LINK_STATUS,&success);
+    if(!success){char infoLog[512];
+                 glGetProgramInfoLog(program,512,nullptr,infolog);
+                 std::cerr<<"linking failed"<<infolog<<std::endl;}
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
@@ -175,3 +232,4 @@ int main() {
     glfwTerminate();
     return 0;
 }
+
