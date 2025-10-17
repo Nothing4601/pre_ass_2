@@ -80,6 +80,12 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         currentMode = INSPECTION;
         std::cout << "Mode: INSPECTION" << std::endl;
     }
+        else if(key== GLFW_KEY_N){
+lightingEnabled = lightingEnabled;
+            std::cout<<"lighting"<<(lightingEnabled? "ON":"OFF")<<std::endl;
+
+
+            
     else if (key == GLFW_KEY_W) {
         Wireframe = !Wireframe;
 
@@ -105,12 +111,41 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 
 void handleModellingKeys(int key) {
     switch (key) {
+    case GLFW_KEY_LEFT:
+cameraAngleY-= 5.0f;
+std::cout << "Camera Y angle:"<< cameraAngleY <<" (rotating left)" << std::endl;
+break;
+case GLFW_KEY_RIGHT:
+cameraAngleY += 5.0f;
+std::cout<< "Camera cameraAngleY"<< "rotating right"<<std::endl;
+break;
+// CAMERA ROTATION-Up/Down (Lost op/dam)
+    case GLFW_KEY_UP:
+         cameraAngleX+=5.0f;
+            if( cameraAngleX>89.0f)  cameraAngleX=89.0f;
+            std::cout<<"Camera X angle: "<<cameraAngleX<<"up"<<std::endl;
+        break;
+        case GLFW_KEY_DOWN:
+         cameraAngleX-=5.0f;
+            if( cameraAngleX<-89.0f)  cameraAngleX=-89.0f;
+            std::cout<<"Camera X angle: "<<cameraAngleX<<"DOWN"<<std::endl;
+            break;     
+            
+        case GLFW_KEY_Q:
+         cameraDistance-=0.5f;
+            if(cameraDistance<1.0f)cameraDistance=1.0f;
+            std::cout<<"camera distance "<<cameraDistance<<"zoom in"<<std::endl;
+            break;
+        case GLFW_KEY_E:
+           cameraDistanc+-=0.5f;
+            if(cameraDistance>20.0f)cameraDistance=20.0f;
+            std::cout<<"camera distance "<<cameraDistance<<"zoom out"<<std::endl;
+            break;
 case GLFW_KEY_V: { // Select shape (robust)
     if (!currentModel) {
         std::cout << "No model loaded.\n";
         break;
     }
-
     // Print available shapes and their IDs so the user knows what to type
     std::cout << "Available Shapes (ID : Type) ----------------\n";
     for (const auto &n : currentModel->getShapes()) {
@@ -378,3 +413,4 @@ void handleInspectionKeys(int key) {
         break;
     }
 }
+
