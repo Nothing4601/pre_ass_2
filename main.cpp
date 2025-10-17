@@ -141,8 +141,31 @@ void renderNode(std::shared_ptr<model_node_t> node, const glm::mat4& parentTrans
 
     if (node->shape) {
         glm::mat4 MVP = projection * view * modelMatrix;
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "MVP"),
+        glUniformMat
+            rix4fv(glGetUniformLocation(shaderProgram, "MVP"),
             1, GL_FALSE, glm::value_ptr(MVP));
+     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"),
+            1, GL_FALSE, glm::value_ptr(modelMatrix));
+ glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"),
+            1, GL_FALSE, glm::value_ptr(view));
+ glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"),
+            1, GL_FALSE, glm::value_ptr(projection));
+        glUniform1i(glGetUniformLocation(shaderProgram,"enableLighting"),lightingEnabled);
+        glUniform3fv(glGetUniformLocation(shaderProgram,"lightPos"),1,glm::value_ptr(lightPosition);
+        glUniform3fv(glGetUniformLocation(shaderProgram,"lightColor"),1,glm::value_ptr(lightColor);
+        glm::vec3 cameraPos= glm::vec3(
+        cameraDistance*sin(glm::radians(cameraAngleY))*cos(glm::radians(cameraAngleX)),
+        cameraDistance*sin(glm::radians(cameraAngleX)),
+        cameraDistance*cos(glm::radians(cameraAngleY))*cos(glm::radians(cameraAngleX))};
+        glUniform3fv(glGetUniformLocation(shaderProgram,"viewPos"),1,glm::value_ptr(cameraPos));
+     glUniform1f(glGetUniformLocation(shaderProgram,"ambientStrength"),ambientStrength);
+         glUniform1f(glGetUniformLocation(shaderProgram,"diffuseStrength"),diffuseStrength);
+         glUniform1f(glGetUniformLocation(shaderProgram,"specularStrength"),specularStrength);
+         glUniform1f(glGetUniformLocation(shaderProgram,"shininess"),shininess);
+
+  
+        
+
         node->shape->draw(MVP, shaderProgram);
     }
 
