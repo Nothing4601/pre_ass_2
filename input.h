@@ -1,4 +1,3 @@
-#pragma once
 #ifndef INPUT_H
 #define INPUT_H
 
@@ -9,7 +8,5 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 void handleModellingKeys(int key);
 void handleInspectionKeys(int key);
 void applyTransform(int direction);
-
-void buildIndoorScene();  // This tells input.cpp the function exists
 
 #endif

@@ -1,10 +1,10 @@
-#include "HIERARCHIAL.h"
+﻿#include "HIERARCHIAL.h"
 #include "shape.h" // Include shape header for derived types in load()
+#include "globals.h"
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
 #include <iostream>
-#include "globals.h"
 
 // model_node_t Method Definitions 
 int model_node_t::next_id = 0;   // definition + initializer
@@ -25,7 +25,7 @@ glm::mat4 model_node_t::getTransform() const {
 
 model_t::model_t() {
     // Create a single root node for the scene
-    root_node = std::make_shared<model_node_t>(nullptr, SPHERE_SHAPE);
+    root_node = std::make_shared<model_node_t>(nullptr, SPHERE_SHAPE); 
     root_node->id = next_id++;
     shapes.push_back(root_node);
 }
@@ -42,7 +42,7 @@ std::shared_ptr<model_node_t> model_t::getRoot() {
 const std::vector<std::shared_ptr<model_node_t>>& model_t::getShapes() const { return shapes; }
 
 void model_t::addShape(std::unique_ptr<shape_t> shape) {
-    addShapeToParent(getRoot()->id, std::move(shape));
+    addShapeToParent(currentNode->id, std::move(shape));
 }
 
 void model_t::addShapeToParent(int parent_ui_id, std::unique_ptr<shape_t> shape) {
@@ -54,20 +54,22 @@ void model_t::addShapeToParent(int parent_ui_id, std::unique_ptr<shape_t> shape)
 
     // Convert unique_ptr to shared_ptr and create the node
     std::shared_ptr<shape_t> shared_shape(std::move(shape));
-    auto new_node = std::make_shared<model_node_t>(shared_shape,
-        shared_shape ? shared_shape->shapetype : SPHERE_SHAPE);
+    auto new_node = std::make_shared<model_node_t>(shared_shape, shared_shape ? shared_shape->shapetype : SPHERE_SHAPE);
 
-    // Set the node's color from the shape's first color if available
     if (shared_shape && !shared_shape->colors.empty()) {
         new_node->color = shared_shape->colors[0];
     }
 
     parent_node->addChild(new_node);
     shapes.push_back(new_node);
+    std::cout << "Added Shape | ID: " << new_node->id
+          << " | Type: " << shapeTypeToString(new_node->type)
+          << " | Parent ID: " << parent_node->id << std::endl;
+
 }
 
 void model_t::removeLastShape() {
-    if (shapes.size() <= 1) return;
+    if (shapes.size() <= 1) return; 
 
     auto last_node = shapes.back();
     shapes.pop_back();
@@ -145,6 +147,7 @@ void model_t::save(const std::string& filename) {
     std::cout << "Model saved to " << filename << std::endl;
 }
 
+//load model
 bool model_t::load(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -153,76 +156,41 @@ bool model_t::load(const std::string& filename) {
     }
 
     struct Entry {
-        int id;
-        ShapeType type;
-        glm::mat4 translation, rotation, scale;
-        int parent_id;
-        glm::vec4 color;
+        int id; ShapeType type; glm::mat4 translation, rotation, scale; int parent_id; glm::vec4 color;
     };
-
     std::vector<Entry> entries;
     std::string line;
-
     while (std::getline(file, line)) {
         std::istringstream iss(line);
         std::string token;
         iss >> token;
-
         if (token == "SHAPE") {
             Entry e{};
             iss >> e.id;
             std::streampos lastPos;
-
             while (true) {
                 lastPos = file.tellg();
                 if (!std::getline(file, line)) break;
                 std::istringstream ps(line);
-                std::string prop;
-                ps >> prop;
-
-                if (prop == "TYPE") {
-                    int t;
-                    ps >> t;
-                    e.type = static_cast<ShapeType>(t);
-                }
-                else if (prop == "TRANSLATION") {
-                    float* ptr = glm::value_ptr(e.translation);
-                    for (int k = 0; k < 16; ++k) ps >> ptr[k];
-                }
-                else if (prop == "ROTATION") {
-                    float* ptr = glm::value_ptr(e.rotation);
-                    for (int k = 0; k < 16; ++k) ps >> ptr[k];
-                }
-                else if (prop == "SCALE") {
-                    float* ptr = glm::value_ptr(e.scale);
-                    for (int k = 0; k < 16; ++k) ps >> ptr[k];
-                }
-                else if (prop == "PARENT") {
-                    ps >> e.parent_id;
-                }
-                else if (prop == "COLOR") {
-                    ps >> e.color.r >> e.color.g >> e.color.b >> e.color.a;
-                }
-                else {
-                    file.seekg(lastPos);
-                    break;
-                }
+                std::string prop; ps >> prop;
+                if (prop == "TYPE") { int t; ps >> t; e.type = static_cast<ShapeType>(t); }
+                else if (prop == "TRANSLATION") { float* ptr = glm::value_ptr(e.translation); for (int k = 0; k < 16; ++k) ps >> ptr[k]; }
+                else if (prop == "ROTATION") { float* ptr = glm::value_ptr(e.rotation); for (int k = 0; k < 16; ++k) ps >> ptr[k]; }
+                else if (prop == "SCALE") { float* ptr = glm::value_ptr(e.scale); for (int k = 0; k < 16; ++k) ps >> ptr[k]; }
+                else if (prop == "PARENT") { ps >> e.parent_id; }
+                else if (prop == "COLOR") { ps >> e.color.r >> e.color.g >> e.color.b >> e.color.a; }
+                else { file.seekg(lastPos); break; }
             }
             entries.push_back(e);
         }
     }
-    file.close();
 
-    // Clear existing model
     clear();
     std::unordered_map<int, std::shared_ptr<model_node_t>> id_to_node;
     id_to_node[getRoot()->id] = getRoot();
 
-    // Load each shape
     for (const auto& e : entries) {
         std::unique_ptr<shape_t> s;
-
-        // Create shape based on type
         switch (e.type) {
         case SPHERE_SHAPE: s = std::make_unique<sphere_t>(2); break;
         case CYLINDER_SHAPE: s = std::make_unique<cylinder_t>(2); break;
@@ -230,32 +198,19 @@ bool model_t::load(const std::string& filename) {
         case CONE_SHAPE: s = std::make_unique<cone_t>(2); break;
         }
 
-        // CRITICAL FIX: Generate geometry FIRST, then set color
-        if (s) {
-            s->generateGeometry();  // This creates all the vertices
-            s->setColor(e.color);   // Now this fills ALL vertices with the loaded color
-
-            // Debug output to verify color is being set
-            std::cout << "Loading shape " << e.id << " with color RGB("
-                << e.color.r << ", " << e.color.g << ", " << e.color.b << ")" << std::endl;
-        }
-
-        // Add shape to the model
         addShapeToParent(e.parent_id, std::move(s));
 
-        // Get the newly added node and set its properties
         auto new_node = getLastNode();
+        if (new_node->shape) {
+            new_node->shape->setColor(e.color);
+        }
         new_node->id = e.id;
         new_node->translation = e.translation;
         new_node->rotation = e.rotation;
         new_node->scale = e.scale;
-        new_node->color = e.color;  // Store color in node for future saves
-
         id_to_node[new_node->id] = new_node;
     }
-
-    std::cout << "Model loaded from " << filename << " with " << entries.size() << " shapes" << std::endl;
-    
+    file.close();
+    std::cout << "Model loaded from " << filename << std::endl;
     return true;
 }
-
