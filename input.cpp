@@ -12,7 +12,6 @@
 
 bool Wireframe = false;
 bool tesselationMode = false;
-bool enableLighting = false;
 shape_t* getCurrentShape() {
     if (currentNode && currentNode->shape) {
         return currentNode->shape.get();  // unique_ptr -> raw pointer
@@ -21,28 +20,43 @@ shape_t* getCurrentShape() {
 }
 
 void applyTransform(int direction) {
-    if (!currentNode) return;
+    if (!currentModel) return;
+
+    // Find the selected node
+    std::shared_ptr<model_node_t> targetNode = nullptr;
+    if (selectedShapeId != -1)
+        targetNode = currentModel->findMNodeById(selectedShapeId);
+    else
+        targetNode = currentNode;
+
+    if (!targetNode) return;
+
+    // If parent transform mode is ON, move to parent node
+    if (transformParentMode && targetNode->parent.lock())
+        targetNode = targetNode->parent.lock();
 
     float step = 0.1f;
     float angle = glm::radians(5.0f);
 
-    //setup transformmode and axis 
     switch (transformMode) {
     case TRANSLATE:
-        if (activeAxis == 'X') currentNode->translation = glm::translate(currentNode->translation, glm::vec3(direction * step, 0, 0));
-        if (activeAxis == 'Y') currentNode->translation = glm::translate(currentNode->translation, glm::vec3(0, direction * step, 0));
-        if (activeAxis == 'Z') currentNode->translation = glm::translate(currentNode->translation, glm::vec3(0, 0, direction * step));
+        if (activeAxis == 'X') targetNode->translation = glm::translate(targetNode->translation, glm::vec3(direction * step, 0, 0));
+        if (activeAxis == 'Y') targetNode->translation = glm::translate(targetNode->translation, glm::vec3(0, direction * step, 0));
+        if (activeAxis == 'Z') targetNode->translation = glm::translate(targetNode->translation, glm::vec3(0, 0, direction * step));
         break;
+
     case ROTATE:
-        if (activeAxis == 'X') currentNode->rotation = glm::rotate(currentNode->rotation, direction * angle, glm::vec3(1, 0, 0));
-        if (activeAxis == 'Y') currentNode->rotation = glm::rotate(currentNode->rotation, direction * angle, glm::vec3(0, 1, 0));
-        if (activeAxis == 'Z') currentNode->rotation = glm::rotate(currentNode->rotation, direction * angle, glm::vec3(0, 0, 1));
+        if (activeAxis == 'X') targetNode->rotation = glm::rotate(targetNode->rotation, direction * angle, glm::vec3(1, 0, 0));
+        if (activeAxis == 'Y') targetNode->rotation = glm::rotate(targetNode->rotation, direction * angle, glm::vec3(0, 1, 0));
+        if (activeAxis == 'Z') targetNode->rotation = glm::rotate(targetNode->rotation, direction * angle, glm::vec3(0, 0, 1));
         break;
+
     case SCALE:
-        if (activeAxis == 'X') currentNode->scale = glm::scale(currentNode->scale, glm::vec3(1 + direction * 0.1f, 1, 1));
-        if (activeAxis == 'Y') currentNode->scale = glm::scale(currentNode->scale, glm::vec3(1, 1 + direction * 0.1f, 1));
-        if (activeAxis == 'Z') currentNode->scale = glm::scale(currentNode->scale, glm::vec3(1, 1, 1 + direction * 0.1f));
+        if (activeAxis == 'X') targetNode->scale = glm::scale(targetNode->scale, glm::vec3(1 + direction * 0.1f, 1, 1));
+        if (activeAxis == 'Y') targetNode->scale = glm::scale(targetNode->scale, glm::vec3(1, 1 + direction * 0.1f, 1));
+        if (activeAxis == 'Z') targetNode->scale = glm::scale(targetNode->scale, glm::vec3(1, 1, 1 + direction * 0.1f));
         break;
+
     default:
         break;
     }
@@ -66,11 +80,6 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         currentMode = INSPECTION;
         std::cout << "Mode: INSPECTION" << std::endl;
     }
-    else if (key == GLFW_KEY_N) {
-        lightingEnabled = !lightingEnabled;
-        std::cout << "Lighting: " << (lightingEnabled ? "ON" : "OFF") << std::endl;
-    }
-   
     else if (key == GLFW_KEY_W) {
         Wireframe = !Wireframe;
 
@@ -96,17 +105,64 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 
 void handleModellingKeys(int key) {
     switch (key) {
-
-    case GLFW_KEY_0:
-        buildIndoorScene();
-        cameraDistance = 8.0f;
-        cameraAngleX = 20.0f;
-        cameraAngleY = 45.0f;
-        currentMode = INSPECTION;
-        std::cout << "Scene created! Switched to INSPECTION mode" << std::endl;
+case GLFW_KEY_V: { // Select shape (robust)
+    if (!currentModel) {
+        std::cout << "No model loaded.\n";
         break;
+    }
 
-    case GLFW_KEY_P: // Move UP to parent
+    // Print available shapes and their IDs so the user knows what to type
+    std::cout << "Available Shapes (ID : Type) ----------------\n";
+    for (const auto &n : currentModel->getShapes()) {
+        if (n)
+            std::cout << "  " << n->id << " : " << shapeTypeToString(n->type) << "\n";
+    }
+    std::cout << "-------------------------------------------\n";
+
+    std::cout << "Enter Shape ID to select: ";
+    std::string line;
+    // Use getline to avoid issues with leftover newlines in std::cin
+    if (!std::getline(std::cin, line)) {
+        // If getline failed (e.g. stream in bad state), try to clear and read again
+        std::cin.clear();
+        if (!std::getline(std::cin, line)) {
+            std::cout << "No input received.\n";
+            break;
+        }
+    }
+    // If the first getline returned an empty line because of a leftover newline, read again
+    if (line.size() == 0) {
+        if (!std::getline(std::cin, line)) {
+            std::cout << "No input received.\n";
+            break;
+        }
+    }
+
+    try {
+        int id = std::stoi(line);
+
+        auto node = currentModel->findMNodeById(id);
+        if (node) {
+            selectedShapeId = id;
+            currentNode = node;                   // make it the active node in UI
+            std::cout << "Selected Shape ID: " << id << " (" << shapeTypeToString(node->type) << ")\n";
+        } else {
+            std::cout << "Invalid Shape ID (not found): " << id << "\n";
+        }
+    } catch (const std::exception &e) {
+        std::cout << "Invalid input (not a number): \"" << line << "\"\n";
+    }
+    break;
+}
+
+case GLFW_KEY_P: { // Toggle parent transform mode
+    transformParentMode = !transformParentMode;
+    std::cout << (transformParentMode ? "Parent Transform Mode: ON" : "Parent Transform Mode: OFF") << std::endl;
+    break;
+}
+
+
+    case GLFW_KEY_U: // Move UP to parent
         if (currentNode->parent.lock()) {
             currentNode = currentNode->parent.lock();
             std::cout << "Selected parent node.\n";
@@ -153,7 +209,7 @@ void handleModellingKeys(int key) {
         std::cout << "Active Axis: Z\n";
         break;
 
-        // Apply transformations
+     // Apply transformations
     case GLFW_KEY_KP_ADD:
     case GLFW_KEY_EQUAL:
         applyTransform(+1);
@@ -163,24 +219,17 @@ void handleModellingKeys(int key) {
         applyTransform(-1);
         break;
 
-        // Change color
+     // Change color
     case GLFW_KEY_C: {
         float r, g, b;
         std::cout << "Enter RGB values (0-1): ";
         std::cin >> r >> g >> b;
         if (currentNode && currentNode->shape) {
-            glm::vec4 newColor(r, g, b, 1.0f);
-            currentNode->shape->setColor(newColor);
-            currentNode->color = newColor;  // CRITICAL: Update the node's color too!
-            std::cout << "Color changed to RGB(" << r << ", " << g << ", " << b << ")" << std::endl;
-        }
-        else {
-            std::cout << "No shape selected!" << std::endl;
+            currentNode->shape->setColor(glm::vec4(r, g, b, 1.0f));
         }
         break;
-    
     }
-                   //Tesselation implementation
+     //Tesselation implementation
     case GLFW_KEY_A:
         tesselationMode = !tesselationMode;
         if (tesselationMode) {
@@ -200,7 +249,7 @@ void handleModellingKeys(int key) {
         }
         break;
 
-        // Add shapes
+    // Add shapes
     case GLFW_KEY_1: //add sphere
         if (tesselationMode && currentNode && currentNode->shape) {
             currentNode->shape->setLevel(1);
@@ -242,15 +291,15 @@ void handleModellingKeys(int key) {
         }
         break;
     case GLFW_KEY_5: // remove last added shape
-
+       
         if (!tesselationMode) {
             currentModel->removeLastShape();
             currentNode = currentModel->getLastNode();
             std::cout << "Last shape removed\n";
         }
         break;
-
-        // Save model
+    
+    // Save model
     case GLFW_KEY_S: {
 
         std::string filename;
@@ -268,7 +317,7 @@ void handleModellingKeys(int key) {
 void handleInspectionKeys(int key) {
     switch (key) {
 
-        // Load model
+    // Load model
     case GLFW_KEY_L: {
         std::string filename;
         std::cout << "Enter filename to load: ";
@@ -276,21 +325,21 @@ void handleInspectionKeys(int key) {
         if (currentModel->load(filename)) {
             currentNode = currentModel->getLastNode();
             // Reset camera to view loaded model
-            cameraDistance = 10.0f;
+            cameraDistance = 5.0f;
             cameraAngleX = 0.0f;
             cameraAngleY = 0.0f;
             modelRotation = glm::mat4(1.0f);
         }
         break;
     }
- 
-                   // Model rotation mode
+
+    // Model rotation mode
     case GLFW_KEY_R:
         transformMode = ROTATE;
         std::cout << "Model rotation mode activated\n";
         break;
 
-        // Axis selection for model rotation
+     // Axis selection for model rotation
     case GLFW_KEY_X:
         activeAxis = 'X';
         std::cout << "Model rotation axis: X\n";
@@ -304,7 +353,7 @@ void handleInspectionKeys(int key) {
         std::cout << "Model rotation axis: Z\n";
         break;
 
-        // Apply model rotation
+    // Apply model rotation
     case GLFW_KEY_KP_ADD:
     case GLFW_KEY_EQUAL:
         if (transformMode == ROTATE) {
@@ -327,63 +376,5 @@ void handleInspectionKeys(int key) {
             }
         }
         break;
-        
-    case GLFW_KEY_LEFT:
-        cameraAngleY -= 5.0f;
-        std::cout << "Camera Y angle: " << cameraAngleY << "° (rotating left)" << std::endl;
-        break;
-
-    case GLFW_KEY_RIGHT:
-        cameraAngleY += 5.0f;
-        std::cout << "Camera Y angle: " << cameraAngleY << "° (rotating right)" << std::endl;
-        break;
-
-        // CAMERA ROTATION - Up/Down (Look up/down)
-    case GLFW_KEY_UP:
-        cameraAngleX += 5.0f;
-        if (cameraAngleX > 89.0f) cameraAngleX = 89.0f;  // Prevent flipping
-        std::cout << "Camera X angle: " << cameraAngleX << "° (looking up)" << std::endl;
-        break;
-
-    case GLFW_KEY_DOWN:
-        cameraAngleX -= 5.0f;
-        if (cameraAngleX < -89.0f) cameraAngleX = -89.0f;  // Prevent flipping
-        std::cout << "Camera X angle: " << cameraAngleX << "° (looking down)" << std::endl;
-        break;
-
-        // CAMERA ZOOM - Q and E keys (or Page Up/Down)
-    case GLFW_KEY_Q:
-        cameraDistance -= 0.5f;
-        if (cameraDistance < 1.0f) cameraDistance = 1.0f;  // Don't get too close
-        std::cout << "Camera distance: " << cameraDistance << " (zooming in)" << std::endl;
-        break;
-
-    case GLFW_KEY_E:
-        cameraDistance += 0.5f;
-        if (cameraDistance > 20.0f) cameraDistance = 20.0f;  // Don't go too far
-        std::cout << "Camera distance: " << cameraDistance << " (zooming out)" << std::endl;
-        break;
-
-        // Alternative zoom with Page Up/Down
-    case GLFW_KEY_PAGE_UP:
-        cameraDistance -= 1.0f;
-        if (cameraDistance < 1.0f) cameraDistance = 1.0f;
-        std::cout << "Camera distance: " << cameraDistance << " (zooming in fast)" << std::endl;
-        break;
-
-    case GLFW_KEY_PAGE_DOWN:
-        cameraDistance += 1.0f;
-        if (cameraDistance > 20.0f) cameraDistance = 20.0f;
-        std::cout << "Camera distance: " << cameraDistance << " (zooming out fast)" << std::endl;
-        break;
-
-        // RESET CAMERA
-    case GLFW_KEY_HOME:
-        cameraAngleX = 20.0f;
-        cameraAngleY = 45.0f;
-        cameraDistance = 8.0f;
-        std::cout << "Camera RESET to default position" << std::endl;
-        break;
     }
 }
-    

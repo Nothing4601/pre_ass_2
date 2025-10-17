@@ -1,9 +1,6 @@
-#version 330
+#version 330 core
+out vec4 FragColor;
 
-in vec4 color;
-out vec4 frag_color;
-
-void main () 
-{
-  frag_color = color;
+void main() {
+    FragColor = vec4(1.0, 1.0, 1.0, 1.0); // solid white
 }

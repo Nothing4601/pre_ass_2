@@ -20,13 +20,11 @@ class shape_t {
 public:
     std::vector<glm::vec4> vertices;
     std::vector<glm::vec4> colors;
-    std::vector<glm::vec3> normals;  // Added for lighting
     std::vector<unsigned int> indices;
 
-    GLuint VAO = 0, VBO = 0, CBO = 0, NBO = 0, EBO = 0;  // Added NBO for normals
+    GLuint VAO = 0, VBO = 0, CBO = 0, EBO = 0;
     ShapeType shapetype;
     unsigned int level;
-
     shape_t() : level(1) {}
     shape_t(unsigned int tesselation_level) : level(tesselation_level) {
         if (level < 1) level = 1;
@@ -37,26 +35,22 @@ public:
         if (VAO) glDeleteVertexArrays(1, &VAO);
         if (VBO) glDeleteBuffers(1, &VBO);
         if (CBO) glDeleteBuffers(1, &CBO);
-        if (NBO) glDeleteBuffers(1, &NBO);
         if (EBO) glDeleteBuffers(1, &EBO);
     }
 
     ShapeType getType() const { return shapetype; }
 
     virtual void generateGeometry() = 0;
-
     unsigned int getLevel() const { return level; }
-
     void setLevel(unsigned int l) {
         if (l < 1) l = 1;
         if (l > 4) l = 4;
         if (level != l) {
             level = l;
             generateGeometry();
-            VAO = VBO = CBO = NBO = EBO = 0; // force GPU buffer update
+            VAO = VBO = CBO = EBO = 0; // force GPU buffer update
         }
     }
-
     virtual void setColor(const glm::vec4& c) {
         if (vertices.empty()) {
             colors.assign(1, c);
@@ -68,8 +62,7 @@ public:
         // Update GPU buffer if already created
         if (CBO != 0) {
             glBindBuffer(GL_ARRAY_BUFFER, CBO);
-            // Re-allocate buffer with correct size
-            glBufferData(GL_ARRAY_BUFFER, colors.size() * sizeof(glm::vec4), colors.data(), GL_STATIC_DRAW);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, colors.size() * sizeof(glm::vec4), colors.data());
             glBindBuffer(GL_ARRAY_BUFFER, 0);
         }
     }
@@ -104,19 +97,6 @@ public:
             GL_STATIC_DRAW);
         glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
         glEnableVertexAttribArray(1);
-
-        // Normals
-        if (normals.empty()) {
-            normals.assign(vertices.size(), glm::vec3(0.0f, 1.0f, 0.0f));
-        }
-        glGenBuffers(1, &NBO);
-        glBindBuffer(GL_ARRAY_BUFFER, NBO);
-        glBufferData(GL_ARRAY_BUFFER,
-            normals.size() * sizeof(glm::vec3),
-            normals.data(),
-            GL_STATIC_DRAW);
-        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-        glEnableVertexAttribArray(2);
 
         // Indices
         glGenBuffers(1, &EBO);
@@ -153,7 +133,6 @@ public:
         setLevel(static_cast<unsigned int>(newLevel));
     }
 };
-
 // Sphere
 class sphere_t : public shape_t {
 public:
@@ -164,7 +143,6 @@ public:
     void generateGeometry() override {
         vertices.clear();
         colors.clear();
-        normals.clear();
         indices.clear();
 
         unsigned int stacks = 10 * level;
@@ -180,8 +158,6 @@ public:
 
                 vertices.emplace_back(x, y, z, 1.0f);
                 colors.emplace_back(1, 1, 1, 1);
-                // Normal for sphere is just the normalized position
-                normals.emplace_back(x, y, z);
             }
         }
 
@@ -212,36 +188,28 @@ public:
     void generateGeometry() override {
         vertices.clear();
         colors.clear();
-        normals.clear();
         indices.clear();
 
         unsigned int slices = 20 * level;
-
-        // Apex
-        vertices.emplace_back(0, 1, 0, 1);
+        vertices.emplace_back(0, 1, 0, 1); // top
         colors.emplace_back(1, 1, 1, 1);
-        normals.emplace_back(0, 1, 0);
-
-        // Base center
+        // Center of base
         vertices.emplace_back(0, -1, 0, 1);
         colors.emplace_back(1, 1, 1, 1);
-        normals.emplace_back(0, -1, 0);
 
-        // Base circle vertices
         for (unsigned int i = 0; i <= slices; ++i) {
             float theta = 2.0f * glm::pi<float>() * i / slices;
             float x = cos(theta);
             float z = sin(theta);
             vertices.emplace_back(x, -1, z, 1);
             colors.emplace_back(1, 1, 1, 1);
-
-            // Calculate normal for cone side
-            glm::vec3 sideNormal = glm::normalize(glm::vec3(x, 0.5f, z));
-            normals.emplace_back(sideNormal);
         }
 
-        // Side triangles
-        for (unsigned int i = 0; i < slices; ++i) {
+        for (unsigned int i = 1; i <= slices; ++i) {
+            indices.push_back(0);
+            indices.push_back(i);
+            indices.push_back(i + 1);
+        }for (unsigned int i = 0; i < slices; ++i) {
             unsigned int apex = 0;
             unsigned int v1 = 2 + i;
             unsigned int v2 = 2 + (i + 1);
@@ -251,7 +219,7 @@ public:
             indices.push_back(v2);
         }
 
-        // Base triangles
+        // Base (fan) 
         for (unsigned int i = 0; i < slices; ++i) {
             unsigned int center = 1;
             unsigned int v1 = 2 + i;
@@ -270,62 +238,65 @@ public:
     box_t(unsigned int tesselation_level = 1) : shape_t(tesselation_level) {
         shapetype = BOX_SHAPE;
     }
-
     void generateGeometry() override {
         vertices.clear();
         colors.clear();
-        normals.clear();
         indices.clear();
 
-        unsigned int n = level;
+        unsigned int n = level; // tessellation subdivisions per edge
         if (n < 1) n = 1;
 
-        auto addFace = [&](glm::vec4 v0, glm::vec4 v1, glm::vec4 v2, glm::vec4 v3,
-            glm::vec4 color, glm::vec3 normal) {
-                unsigned int startIndex = vertices.size();
+        auto addFace = [&](glm::vec4 v0, glm::vec4 v1, glm::vec4 v2, glm::vec4 v3, glm::vec4 color) {
+            unsigned int startIndex = vertices.size();
 
-                for (unsigned int i = 0; i <= n; ++i) {
-                    for (unsigned int j = 0; j <= n; ++j) {
-                        float u = float(i) / n;
-                        float v = float(j) / n;
+            // Generate tessellated vertices for this face
+            for (unsigned int i = 0; i <= n; ++i) {
+                for (unsigned int j = 0; j <= n; ++j) {
+                    float u = float(i) / n;
+                    float v = float(j) / n;
 
-                        glm::vec4 pos = (1 - u) * (1 - v) * v0 + u * (1 - v) * v1 +
-                            u * v * v2 + (1 - u) * v * v3;
-                        vertices.push_back(pos);
-                        colors.push_back(color);
-                        normals.push_back(normal);
-                    }
+                    // Bilinear interpolation across the quad
+                    glm::vec4 pos = (1 - u) * (1 - v) * v0 + u * (1 - v) * v1 + u * v * v2 + (1 - u) * v * v3;
+                    vertices.push_back(pos);
+                    colors.push_back(color);
                 }
+            }
 
-                for (unsigned int i = 0; i < n; ++i) {
-                    for (unsigned int j = 0; j < n; ++j) {
-                        unsigned int row1 = i * (n + 1) + j + startIndex;
-                        unsigned int row2 = (i + 1) * (n + 1) + j + startIndex;
+            // Generate indices for tessellated face
+            for (unsigned int i = 0; i < n; ++i) {
+                for (unsigned int j = 0; j < n; ++j) {
+                    unsigned int row1 = i * (n + 1) + j + startIndex;
+                    unsigned int row2 = (i + 1) * (n + 1) + j + startIndex;
 
-                        indices.push_back(row1);
-                        indices.push_back(row2);
-                        indices.push_back(row1 + 1);
+                    // Triangle 1
+                    indices.push_back(row1);
+                    indices.push_back(row2);
+                    indices.push_back(row1 + 1);
 
-                        indices.push_back(row2);
-                        indices.push_back(row2 + 1);
-                        indices.push_back(row1 + 1);
-                    }
+                    // Triangle 2
+                    indices.push_back(row2);
+                    indices.push_back(row2 + 1);
+                    indices.push_back(row1 + 1);
                 }
+            }
             };
 
+        // Define the 8 corner vertices
         glm::vec4 v[] = {
-            {-1,-1,-1,1}, {1,-1,-1,1}, {1,1,-1,1}, {-1,1,-1,1},
-            {-1,-1, 1,1}, {1,-1, 1,1}, {1,1, 1,1}, {-1,1, 1,1}
+            {-1,-1,-1,1}, {1,-1,-1,1}, {1,1,-1,1}, {-1,1,-1,1},  // back face vertices
+            {-1,-1, 1,1}, {1,-1, 1,1}, {1,1, 1,1}, {-1,1, 1,1}   // front face vertices
         };
 
+        // White color for all vertices
         glm::vec4 whiteColor = { 1.0f, 1.0f, 1.0f, 1.0f };
 
-        addFace(v[0], v[1], v[2], v[3], whiteColor, glm::vec3(0, 0, -1));  // back
-        addFace(v[5], v[4], v[7], v[6], whiteColor, glm::vec3(0, 0, 1));   // front
-        addFace(v[4], v[0], v[3], v[7], whiteColor, glm::vec3(-1, 0, 0));  // left
-        addFace(v[1], v[5], v[6], v[2], whiteColor, glm::vec3(1, 0, 0));   // right
-        addFace(v[3], v[2], v[6], v[7], whiteColor, glm::vec3(0, 1, 0));   // top
-        addFace(v[4], v[5], v[1], v[0], whiteColor, glm::vec3(0, -1, 0));  // bottom
+        // Add tessellated faces
+        addFace(v[0], v[1], v[2], v[3], whiteColor);  // back
+        addFace(v[5], v[4], v[7], v[6], whiteColor);  // front
+        addFace(v[4], v[0], v[3], v[7], whiteColor);  // left
+        addFace(v[1], v[5], v[6], v[2], whiteColor);  // right
+        addFace(v[3], v[2], v[6], v[7], whiteColor);  // top
+        addFace(v[4], v[5], v[1], v[0], whiteColor);  // bottom
     }
 };
 
@@ -337,75 +308,78 @@ public:
     }
 
     void generateGeometry() override {
+        std::cout << "Cylinder generateGeometry() called " << std::endl;
         vertices.clear();
         colors.clear();
-        normals.clear();
         indices.clear();
-
         unsigned int slices = 20 * level;
+        std::cout << "Tesselation level: " << level << std::endl;
+        std::cout << "Slices: " << slices << std::endl;
 
-        // Generate cylindrical surface vertices
+        // Generate cylindrical surface vertices (unchanged)
         for (unsigned int i = 0; i <= slices; ++i) {
             float theta = 2.0f * glm::pi<float>() * i / slices;
             float x = cos(theta);
             float z = sin(theta);
-
-            // Top vertex
-            vertices.emplace_back(x, 1, z, 1);
+            vertices.emplace_back(x, 1, z, 1); // Top vertex (even index)
+            colors.emplace_back(1, 1, 1, 1); 
+            vertices.emplace_back(x, -1, z, 1); // Bottom vertex (odd index)
             colors.emplace_back(1, 1, 1, 1);
-            normals.emplace_back(x, 0, z);  // Normal points radially outward
-
-            // Bottom vertex
-            vertices.emplace_back(x, -1, z, 1);
-            colors.emplace_back(1, 1, 1, 1);
-            normals.emplace_back(x, 0, z);
+            if (i % 10 == 0) { // Debug every 10th iteration
+                std::cout << "Iteration " << i << ": Added vertices at (" << x << ", 1, " << z << ") and (" << x << ", -1, " << z << ")" << std::endl;
+            }
         }
 
-        // Add center vertices for caps
+        // Add center vertices for top and bottom caps
         unsigned int topCenterIndex = vertices.size();
-        vertices.emplace_back(0, 1, 0, 1);
-        colors.emplace_back(1, 1, 1, 1);
-        normals.emplace_back(0, 1, 0);
+        vertices.emplace_back(0, 1, 0, 1); // Top center
+        colors.emplace_back(1, 1, 1, 1); 
 
         unsigned int bottomCenterIndex = vertices.size();
-        vertices.emplace_back(0, -1, 0, 1);
-        colors.emplace_back(1, 1, 1, 1);
-        normals.emplace_back(0, -1, 0);
+        vertices.emplace_back(0, -1, 0, 1); // Bottom center
+        colors.emplace_back(1, 1, 1, 1); 
 
-        // Cylindrical surface indices
+        std::cout << "After vertex generation: " << vertices.size() << " vertices" << std::endl;
+
+        // Generate cylindrical surface indices 
         for (unsigned int i = 0; i < slices; ++i) {
-            unsigned int curr = i * 2;
-            unsigned int next = ((i + 1) % slices) * 2;
-
-            indices.push_back(curr);
-            indices.push_back(curr + 1);
-            indices.push_back(next);
-
-            indices.push_back(curr + 1);
-            indices.push_back(next + 1);
-            indices.push_back(next);
+            unsigned int curr = i * 2; // Current pair start
+            unsigned int next = ((i + 1) % slices) * 2; // Next pair start
+            // Triangle 1: curr_top, curr_bottom, next_top
+            indices.push_back(curr); // Current top
+            indices.push_back(curr + 1); // Current bottom
+            indices.push_back(next); // Next top
+            // Triangle 2: curr_bottom, next_bottom, next_top
+            indices.push_back(curr + 1); // Current bottom
+            indices.push_back(next + 1); // Next bottom
+            indices.push_back(next); // Next top
+            if (i % 10 == 0) { 
+                std::cout << "Triangle pair " << i << ": indices (" << curr << "," << curr + 1 << "," << next << ") and (" << curr + 1 << "," << next + 1 << "," << next << ")" << std::endl;
+            }
         }
 
-        // Top cap triangles
+        // Generate top cap triangles
         for (unsigned int i = 0; i < slices; ++i) {
-            unsigned int curr = i * 2;
-            unsigned int next = ((i + 1) % slices) * 2;
-
+            unsigned int curr = i * 2; // Current top vertex
+            unsigned int next = ((i + 1) % slices) * 2; // Next top vertex
+            // Triangle: topCenter, curr_top, next_top
             indices.push_back(topCenterIndex);
             indices.push_back(curr);
             indices.push_back(next);
         }
 
-        // Bottom cap triangles
+        // Generate bottom cap triangles
         for (unsigned int i = 0; i < slices; ++i) {
-            unsigned int curr = i * 2 + 1;
-            unsigned int next = ((i + 1) % slices) * 2 + 1;
-
+            unsigned int curr = i * 2 + 1; // Current bottom vertex
+            unsigned int next = ((i + 1) % slices) * 2 + 1; // Next bottom vertex
+            // Triangle: bottomCenter, next_bottom, curr_bottom (reversed winding for correct normal)
             indices.push_back(bottomCenterIndex);
             indices.push_back(next);
             indices.push_back(curr);
         }
+
+        std::cout << "After index generation: " << indices.size() << " indices" << std::endl;
+        std::cout << " End generateGeometry() " << std::endl;
     }
 };
-
 #endif // SHAPE_H
