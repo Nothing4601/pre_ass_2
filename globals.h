@@ -22,3 +22,11 @@ extern std::shared_ptr<model_node_t> currentNode;
 
 extern float cameraDistance, cameraAngleX, cameraAngleY;
 extern glm::mat4 modelRotation;
+
+extern bool lightingEnabled;
+extern glm::vec3 lightPosition;
+extern glm:: vec3 lightColor;
+extern float ambientStrength;
+extern float diffuseStrength;
+extern float specularStrength;
+extern float shininess;
